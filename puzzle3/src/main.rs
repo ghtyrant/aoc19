@@ -4,7 +4,7 @@ use itertools::Itertools;
 use std::fmt;
 use std::io;
 
-type Vector2D = (u32, u32);
+type Vector2D = (i32, i32);
 
 #[derive(PartialEq)]
 enum Orientation {
@@ -24,19 +24,41 @@ impl fmt::Display for Orientation {
 struct Line {
     start: Vector2D,
     end: Vector2D,
+    real_start: Vector2D,
     orientation: Orientation,
 }
 
 impl Line {
     fn new(start: Vector2D, end: Vector2D) -> Line {
+        let orientation = if start.0 == end.0 {
+            Orientation::Vertical
+        } else {
+            Orientation::Horizontal
+        };
+
+        let real_start = start;
+        let (start, end) = match orientation {
+            Orientation::Vertical => {
+                if start.1 > end.1 {
+                    (end, start)
+                } else {
+                    (start, end)
+                }
+            }
+            Orientation::Horizontal => {
+                if start.0 > end.0 {
+                    (end, start)
+                } else {
+                    (start, end)
+                }
+            }
+        };
+
         Line {
             start,
             end,
-            orientation: if start.0 == end.0 {
-                Orientation::Vertical
-            } else {
-                Orientation::Horizontal
-            },
+            real_start,
+            orientation,
         }
     }
 
@@ -67,6 +89,17 @@ impl Line {
 
         Some((vertical_line.start.0, horizontal_line.start.1))
     }
+
+    fn contains_point(&self, point: Vector2D) -> bool {
+        point.0 >= self.start.0
+            && point.0 <= self.end.0
+            && point.1 >= self.start.1
+            && point.1 <= self.end.1
+    }
+
+    fn steps(&self) -> i32 {
+        manhatten_distance(self.start, self.end)
+    }
 }
 
 impl fmt::Display for Line {
@@ -79,13 +112,13 @@ impl fmt::Display for Line {
     }
 }
 
-fn parse_path(path_str: &str, central_port: Vector2D) -> Vec<Line> {
-    let mut last_point = central_port;
+fn parse_path(path_str: &str) -> Vec<Line> {
+    let mut last_point = (0, 0);
 
     path_str
         .split(',')
         .map(|step| {
-            let value: u32 = match step[1..].parse() {
+            let value: i32 = match step[1..].parse() {
                 Ok(v) => v,
                 Err(_) => panic!("Error parsing direction value {}!", &step[1..]),
             };
@@ -104,28 +137,56 @@ fn parse_path(path_str: &str, central_port: Vector2D) -> Vec<Line> {
 }
 
 fn manhatten_distance(point1: Vector2D, point2: Vector2D) -> i32 {
-    (point1.0 as i32 - point2.0 as i32).abs() + (point1.1 as i32 - point2.1 as i32).abs()
+    (point1.0 - point2.0).abs() + (point1.1 - point2.1).abs()
+}
+
+fn steps_to_point(lines: &Vec<Line>, point: Vector2D) -> i32 {
+    let mut steps = 0;
+    let mut num_lines = 0;
+    for line in lines {
+        if line.contains_point(point) {
+            steps += manhatten_distance(line.real_start, point);
+            break;
+        }
+
+        steps += line.steps();
+        num_lines += 1;
+    }
+
+    steps
 }
 
 fn main() -> io::Result<()> {
-    // Not very elegant, but this keeps all coordinates positive
-    let central_port = (10000, 10000);
-
     let lines: Vec<Vec<Line>> = include_str!("../input")
         .trim()
         .split('\n')
-        .map(|x| parse_path(x, central_port))
+        .map(|x| parse_path(x))
         .collect();
 
-    let min_distance: i32 = lines[0]
+    let intersections: Vec<Vector2D> = lines[0]
         .iter()
         .cartesian_product(lines[1].iter())
         .filter_map(|(line1, line2)| line1.intersect(&line2))
-        .map(|x| manhatten_distance(x, central_port))
+        .filter(|&x| x != (0, 0))
+        .collect();
+
+    println!("Intersections: {:?}", intersections);
+
+    let min_distance: i32 = intersections
+        .iter()
+        .map(|&x| manhatten_distance(x, (0, 0)))
         .min()
         .unwrap();
 
     println!("Minimum: {}", min_distance);
+
+    let minimum_steps: i32 = intersections
+        .iter()
+        .map(|&x| steps_to_point(&lines[0], x) + steps_to_point(&lines[1], x))
+        .min()
+        .unwrap();
+
+    println!("Minimum steps: {}", minimum_steps);
 
     Ok(())
 }
